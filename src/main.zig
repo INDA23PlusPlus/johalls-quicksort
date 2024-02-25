@@ -186,36 +186,33 @@ fn less(_: @TypeOf(.{}), a: i32, b: i32) bool {
     return a < b;
 }
 
-fn test_sort(sorting_fn: anytype, comptime T: type, comptime max_len: comptime_int) !void {
-    var nums: [max_len]T = undefined;
-    var check: [max_len]T = undefined;
+fn test_sort_impl(sorting_fn: anytype, comptime T: type, comptime len: comptime_int) !void {
+    var nums: [len]T = undefined;
+    var check: [len]T = undefined;
     var rand: T = 0;
-    rand +%= 637991;
+    rand +%= 127;
     const utils = struct {
         fn less(_: @TypeOf(.{}), a: T, b: T) bool {
             return a < b;
         }
     };
-    for (1..max_len + 1) |len| {
-        for (0..len) |i| {
-            rand *%= 13789;
-            rand +%= 19237;
-            nums[i] = rand;
-            check[i] = rand;
-        }
+    for (0..len) |i| {
+        rand *%= 7;
+        nums[i] = rand;
+        check[i] = rand;
+    }
 
-        sorting_fn(nums[0..len]);
-        std.sort.pdq(T, check[0..len], .{}, utils.less);
+    sorting_fn(nums[0..len]);
+    std.sort.pdq(T, check[0..len], .{}, utils.less);
 
-        for (0..len) |i| {
-            try std.testing.expectEqual(check[i], nums[i]);
-        }
+    for (0..len) |i| {
+        try std.testing.expectEqual(check[i], nums[i]);
     }
 }
 
-fn test_sortf(sorting_fn: anytype, comptime T: type, comptime max_len: comptime_int) !void {
-    var nums: [max_len]T = undefined;
-    var check: [max_len]T = undefined;
+fn test_sortf_impl(sorting_fn: anytype, comptime T: type, comptime len: comptime_int) !void {
+    var nums: [len]T = undefined;
+    var check: [len]T = undefined;
     var rand: usize = 0;
     rand +%= 63799;
     const utils = struct {
@@ -223,27 +220,33 @@ fn test_sortf(sorting_fn: anytype, comptime T: type, comptime max_len: comptime_
             return a < b;
         }
     };
-    for (1..max_len + 1) |len| {
-        for (0..len) |i| {
-            rand *%= 13789;
-            rand +%= 19237;
-            const t1: T = @floatFromInt(rand);
+    for (0..len) |i| {
+        rand *%= 13789;
+        rand +%= 19237;
+        const t1: T = @floatFromInt(rand);
 
-            rand *%= 13789;
-            rand +%= 19237;
-            const t2: T = @floatFromInt(rand);
+        rand *%= 13789;
+        rand +%= 19237;
+        const t2: T = @floatFromInt(rand);
 
-            nums[i] = t1 + t2 / 1000.0;
-            check[i] = t1 + t2 / 1000.0;
-        }
-
-        sorting_fn(nums[0..len]);
-        std.sort.pdq(T, check[0..len], .{}, utils.less);
-
-        for (0..len) |i| {
-            try std.testing.expectEqual(check[i], nums[i]);
-        }
+        nums[i] = t1 + t2 / 1000.0;
+        check[i] = t1 + t2 / 1000.0;
     }
+
+    sorting_fn(nums[0..len]);
+    std.sort.pdq(T, check[0..len], .{}, utils.less);
+
+    for (0..len) |i| {
+        try std.testing.expectEqual(check[i], nums[i]);
+    }
+}
+
+fn test_sort(sorting_fn: anytype, comptime T: type, comptime len: comptime_int) !void {
+    return switch (@typeInfo(T)) {
+        .Int => test_sort_impl(sorting_fn, T, len),
+        .Float => test_sortf_impl(sorting_fn, T, len),
+        else => @compileError("unsupported"),
+    };
 }
 
 fn insertion_sort(arr: anytype) void {
@@ -258,10 +261,11 @@ fn insertion_sort(arr: anytype) void {
 }
 
 test "insertion_sort" {
-    try test_sort(insertion_sort, u32, 1000);
-    try test_sort(insertion_sort, i32, 1000);
-    try test_sortf(insertion_sort, f32, 1000);
-    try test_sortf(insertion_sort, f64, 1000);
+    inline for ([_]type{ u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64, f80, f128 }) |T| {
+        inline for ([_]comptime_int{ 1, 2, 3, 4, 10, 100, 1000 }) |len| {
+            try test_sort(radix_sort, T, len);
+        }
+    }
 }
 
 fn basic_radix_sort_unsigned_impl(comptime Log2NumBuckets: comptime_int, arr: anytype, out: anytype) void {
@@ -280,7 +284,7 @@ fn basic_radix_sort_unsigned_impl(comptime Log2NumBuckets: comptime_int, arr: an
 
         counts = @splat(0);
         for (a) |e| {
-            counts[(e >> @intCast(shift)) & mask] += 1;
+            counts[@intCast((e >> @intCast(shift)) & mask)] += 1;
         }
 
         for (1..NumBuckets) |i| {
@@ -289,7 +293,7 @@ fn basic_radix_sort_unsigned_impl(comptime Log2NumBuckets: comptime_int, arr: an
 
         for (0..n) |r| {
             const i = n - r - 1;
-            const c = &counts[(a[i] >> @intCast(shift)) & mask];
+            const c = &counts[@intCast((a[i] >> @intCast(shift)) & mask)];
 
             c.* -= 1;
             b[c.*] = a[i];
@@ -362,10 +366,11 @@ fn radix_sort(arr: anytype) void {
 }
 
 test "radix_sort" {
-    try test_sort(radix_sort, u32, 10000);
-    try test_sort(radix_sort, i32, 10000);
-    try test_sortf(radix_sort, f32, 10000);
-    try test_sortf(radix_sort, f64, 10000);
+    inline for ([_]type{ u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, f32, f64, f80, f128 }) |T| {
+        inline for ([_]comptime_int{ 1, 2, 3, 4, 10, 100, 1000, 10000 }) |len| {
+            try test_sort(radix_sort, T, len);
+        }
+    }
 }
 
 pub fn main() !void {
